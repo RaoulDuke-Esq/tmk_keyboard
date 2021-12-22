@@ -85,6 +85,14 @@ action_t action_for_key(uint8_t layer, keypos_t key)
     return (action_t){ .code = pgm_read_word(&actionmaps[(layer)][key.row & 0x07][key.col & 0x0F]) };
 }
 
+#ifdef IBMPC_MOUSE_ENABLE
+static uint8_t last_buttons;
+uint8_t ibmpc_mouse_buttons(void)
+{
+    return last_buttons;
+}
+#endif
+
 
 void IBMPCConverter::set_led(uint8_t usb_led)
 {
@@ -607,6 +615,7 @@ MOUSE_DONE:
                         mouse_report.v = -CHOP8(v);
                         mouse_report.h =  CHOP8(h);
                         host_mouse_send(&mouse_report);
+                        last_buttons = mouse_report.buttons;
                         xprintf("M[x:%d y:%d v:%d h:%d b:%02X]\n", mouse_report.x, mouse_report.y,
                                 mouse_report.v, mouse_report.h, mouse_report.buttons);
                         break; }
@@ -866,13 +875,13 @@ uint8_t IBMPCConverter::cs2_e0code(uint8_t code) {
     switch(code) {
         // E0 prefixed codes translation See [a].
         case 0x11: return 0x0F; // right alt
-        case 0x14: return 0x17; // right control
-        case 0x1F: return 0x19; // left GUI
+        case 0x14: return 0x19; // right control
+        case 0x1F: return 0x17; // left GUI
         case 0x27: return 0x1F; // right GUI
-        case 0x2F: return 0x5C; // apps
+        case 0x2F: return 0x27; // apps
         case 0x4A: return 0x60; // keypad /
         case 0x5A: return 0x62; // keypad enter
-        case 0x69: return 0x27; // end
+        case 0x69: return 0x5C; // end
         case 0x6B: return 0x53; // cursor left
         case 0x6C: return 0x2F; // home
         case 0x70: return 0x39; // insert
@@ -919,26 +928,57 @@ uint8_t IBMPCConverter::cs2_e0code(uint8_t code) {
     }
 }
 
+#ifdef CS2_80CODE_SUPPORT
+// 80-prefixed codes
+uint8_t IBMPCConverter::cs2_80code(uint8_t code) {
+    // Tandberg TDV 5020
+    // https://github.com/tmk/tmk_keyboard/wiki/IBM-PC-AT-Keyboard-Protocol#tandberg-tdv-5020
+    switch (code) {
+        case 0x2B: return 0x08; // TDV:MERK  (mark)                 -> F13
+        case 0x34: return 0x10; // TDV:ANGRE (undo)                 -> F14
+        case 0x33: return 0x18; // TDV:SKRIV (print)                -> F15
+        case 0x42: return 0x20; // TDV:SLUTT (end)                  -> F16
+        case 0x2C: return 0x28; // TDV:STRYK (cut)                  -> F17
+        case 0x3C: return 0x30; // TDV:KOPI  (copy)                 -> F18
+        case 0x43: return 0x38; // TDV:FLYTT (move)                 -> F19
+        case 0x4B: return 0x40; // TDV:FELT  (cell)                 -> F20
+        case 0x2A: return 0x48; // TDV:AVSN  (paragraph)            -> F21
+        case 0x32: return 0x50; // TDV:SETN  (sentence)             -> F22
+        case 0x3A: return 0x57; // TDV:ORD   (word)                 -> F23
+        case 0x61: return 0x6A; // TDV:⮎     (?)                    -> JYEN Japanese Yen
+        case 0x1D: return 0x5F; // TDV:HJELP (help)                 -> F24
+        case 0x24: return 0x17; // TDV:^^^   (?)                    -> LGUI
+        case 0x44: return 0x65; // TDV:>>/<< (left/right adjust)    -> VOLD Volume Down
+        case 0x4D: return 0x6E; // TDV:JUST  (adjust)               -> VOLU Volume Up
+        case 0x1C: return 0x6F; // TDV:>< <> (center/block)         -> MUTE
+        case 0x2D: return 0x51; // TDV:⇟     (three lines down)     -> RO   Japanese Ro
+        case 0x1B: return 0x1F; // TDV:⇤     (start of line)        -> RGUI
+        case 0x23: return 0x27; // TDV:⇥     (end of line)          -> APP
+    }
+    return code;
+}
+#endif
+
 // IBM 5576-002/003 Scan code translation
 // https://github.com/tmk/tmk_keyboard/wiki/IBM-PC-AT-Keyboard-Protocol#ibm-5576-code-set-82h
 uint8_t IBMPCConverter::translate_5576_cs2(uint8_t code) {
     switch (code) {
         case 0x11: return 0x0F; // Zenmen   -> RALT
         case 0x13: return 0x11; // Kanji    -> LALT
-        case 0x0E: return 0x54; // @
-        case 0x54: return 0x5B; // [
-        case 0x5B: return 0x5D; // ]
-        case 0x5C: return 0x6A; // JYEN
-        case 0x5D: return 0x6A; // JYEN
-        case 0x62: return 0x0E; // Han/Zen  -> `~
-        case 0x7C: return 0x77; // Keypad *
+        case 0x0E: return 0x54; // @        -> [
+        case 0x54: return 0x5B; // [        -> ]
+        case 0x5B: return 0x5D; // ]        -> Backslash
+        case 0x5C: return 0x6A; //          -> JPY
+        case 0x5D: return 0x6A; // ￥       -> JPY
+        case 0x62: return 0x0E; // Han/Zen  -> Grave
+        case 0x7C: return 0x77; // Keypad * -> NumLock
     }
     return code;
 }
 uint8_t IBMPCConverter::translate_5576_cs2_e0(uint8_t code) {
     switch (code) {
         case 0x11: return 0x13; // Hiragana -> KANA
-        case 0x41: return 0x7C; // Keypad '
+        case 0x41: return 0x7C; // Keypad , -> Keypad *
     }
     return code;
 }
@@ -960,6 +1000,11 @@ int8_t IBMPCConverter::process_cs2(uint8_t code)
                 case 0xE1:
                     state_cs2 = CS2_E1;
                     break;
+#ifdef CS2_80CODE_SUPPORT
+                case 0x80:
+                    state_cs2 = CS2_80;
+                    break;
+#endif
                 case 0x83:  // F7
                     matrix_make(0x02);
                     state_cs2 = CS2_INIT;
@@ -1101,6 +1146,25 @@ int8_t IBMPCConverter::process_cs2(uint8_t code)
                     state_cs2 = CS2_INIT;
             }
             break;
+#ifdef CS2_80CODE_SUPPORT
+        case CS2_80:
+            switch (code) {
+                case 0xF0:
+                    state_cs2 = CS2_80_F0;
+                    break;
+                default:
+                    state_cs2 = CS2_INIT;
+                    matrix_make(cs2_80code(code));
+            }
+            break;
+        case CS2_80_F0:
+            switch (code) {
+                default:
+                    state_cs2 = CS2_INIT;
+                    matrix_break(cs2_80code(code));
+            }
+            break;
+#endif
         default:
             state_cs2 = CS2_INIT;
     }
