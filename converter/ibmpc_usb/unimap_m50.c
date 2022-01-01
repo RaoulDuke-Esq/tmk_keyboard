@@ -13,6 +13,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
+Example usage: make -f Makefile.atmega32u4 KEYMAP=m50
 */
 #include "unimap_trans.h"
 #include <stdint.h>
